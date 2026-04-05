@@ -3,6 +3,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import { ApiModule } from './api/api.module';
+import { HealthModule } from './health/health.module';
 import { LoggerModule } from 'nestjs-pino';
 
 @Module({
@@ -31,6 +32,7 @@ import { LoggerModule } from 'nestjs-pino';
     }),
     ConfigModule.forRoot({ isGlobal: true }),
     ApiModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService],

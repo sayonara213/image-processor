@@ -56,3 +56,9 @@ jobs:
             cd ~/app
             docker compose pull
             docker compose up -d
+
+      # 7. Hit the health endpoint to confirm the service is up
+      - name: Health check
+        run: |
+          curl --fail --retry 10 --retry-delay 5 --retry-connrefused \
+            http://${{ secrets.LIGHTSAIL_HOST }}/health
