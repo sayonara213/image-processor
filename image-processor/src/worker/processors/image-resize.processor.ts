@@ -10,6 +10,7 @@ import {
 } from 'src/common/interfaces/job.interface';
 import { JobService } from 'src/common/services/job.service';
 import sharp from 'sharp';
+import { AppLogger } from 'src/common/services/logger.service';
 
 @Injectable()
 export class ImageResizeProcessor implements OnModuleInit {
@@ -18,7 +19,10 @@ export class ImageResizeProcessor implements OnModuleInit {
     private readonly storageService: StorageService,
     private readonly notificationService: NotificationService,
     private readonly jobService: JobService,
-  ) {}
+    private readonly logger: AppLogger,
+  ) {
+    this.logger.setContext(ImageResizeProcessor.name);
+  }
 
   async poll() {
     while (true) {
@@ -35,6 +39,11 @@ export class ImageResizeProcessor implements OnModuleInit {
     }
   }
   async processJob(job: ImageJobPayload) {
+    this.logger.log('Processing job', {
+      jobId: job.jobId,
+      presets: job.resizePreset,
+    });
+
     await this.jobService.updateJobStatus(job.jobId, JobStatus.PROCESSING);
     const originalImage = await this.storageService.download(job.originalKey);
     try {
@@ -74,9 +83,11 @@ export class ImageResizeProcessor implements OnModuleInit {
         results,
       });
       await this.notificationService.notifyJobComplete(job.jobId, results);
+      this.logger.log('Job success', { jobId: job.jobId });
     } catch (error) {
       await this.jobService.updateJobStatus(job.jobId, JobStatus.FAILED);
       await this.notificationService.notifyJobFailed(job.jobId, error);
+      this.logger.error('Job failed', error as Error, { jobId: job.jobId });
     }
   }
 

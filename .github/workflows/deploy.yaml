@@ -1,0 +1,58 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Pull your repo code into the CI runner
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 2. Set up AWS credentials so the runner can talk to ECR
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # 3. Log in to ECR — like "docker login" but for AWS
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # 4. Build the Docker image once from your Dockerfile
+      #    We tag it with the git commit SHA so every build is unique
+      - name: Build image
+        run: |
+          docker build -t image-processor ./image-processor
+
+      # 5. Tag that single image for both ECR repos and push
+      #    Same image, different names — API and Worker only differ by the start command
+      - name: Push to ECR
+        env:
+          ECR_REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+        run: |
+          docker tag image-processor $ECR_REGISTRY/image-processor-api:latest
+          docker tag image-processor $ECR_REGISTRY/image-processor-worker:latest
+          docker push $ECR_REGISTRY/image-processor-api:latest
+          docker push $ECR_REGISTRY/image-processor-worker:latest
+
+      # 6. SSH into Lightsail, pull the new images, restart containers
+      #    This logs into ECR on the server, pulls fresh images, and restarts
+      - name: Deploy to Lightsail
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ubuntu
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script: |
+            aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com
+            cd ~/app
+            docker compose pull
+            docker compose up -d

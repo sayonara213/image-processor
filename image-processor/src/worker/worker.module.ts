@@ -4,9 +4,33 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { CommonModule } from 'src/common/common.module';
 import { ImageJobEntity } from 'src/common/entities/job.entity';
 import { ImageResizeProcessor } from './processors/image-resize.processor';
+import { LoggerModule } from 'nestjs-pino';
+import { AppLogger } from 'src/common/services/logger.service';
 
 @Module({
   imports: [
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: process.env.NODE_ENV !== 'production' ? 'debug' : 'info',
+        transport: {
+          targets: [
+            {
+              target: 'pino-pretty',
+              options: { colorize: true },
+              level: 'debug',
+            },
+            {
+              target: 'pino-loki',
+              options: {
+                host: process.env.LOKI_HOST || 'http://localhost:3100',
+                labels: { app: 'image-processor', service: 'worker' }, // use 'worker' for the worker module
+              },
+              level: 'info',
+            },
+          ],
+        },
+      },
+    }),
     CommonModule,
     ConfigModule.forRoot({ isGlobal: true }),
     TypeOrmModule.forRootAsync({
@@ -24,6 +48,6 @@ import { ImageResizeProcessor } from './processors/image-resize.processor';
     }),
     TypeOrmModule.forFeature([ImageJobEntity]),
   ],
-  providers: [ImageResizeProcessor],
+  providers: [ImageResizeProcessor, AppLogger],
 })
 export class WorkerModule {}
