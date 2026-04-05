@@ -61,4 +61,4 @@ jobs:
       - name: Health check
         run: |
           curl --fail --retry 10 --retry-delay 5 --retry-connrefused \
-            http://${{ secrets.LIGHTSAIL_HOST }}/health
+            http://${{ secrets.LIGHTSAIL_HOST }}:3000/health
