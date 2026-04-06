@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
 import { ImageController } from './image.controller';
 import { ImageService } from '../services/image.service';
+import { AuthGuard } from 'src/api/user/auth/auth.guard';
 import { JobStatus, ResizePreset } from 'src/common/interfaces/job.interface';
 import { ImageJobEntity } from 'src/common/entities/job.entity';
 
@@ -30,7 +31,10 @@ describe('ImageController', () => {
           },
         },
       ],
-    }).compile();
+    })
+      .overrideGuard(AuthGuard)
+      .useValue({ canActivate: jest.fn().mockReturnValue(true) })
+      .compile();
 
     controller = module.get<ImageController>(ImageController);
     imageService = module.get(ImageService);

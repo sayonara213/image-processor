@@ -25,9 +25,10 @@ describe('ImageResizeProcessor', () => {
   let jobService: jest.Mocked<JobService>;
 
   const mockJob = {
-    jobId: 'job-uuid',
+    id: 'job-uuid',
+    userId: 'user-123',
     originalKey: 'originals/job-uuid/photo.jpg',
-    resizePreset: [ResizePreset.THUMBNAIL],
+    presets: [ResizePreset.THUMBNAIL],
   };
 
   beforeEach(async () => {
@@ -79,9 +80,10 @@ describe('ImageResizeProcessor', () => {
       await processor.processJob(mockJob);
 
       const calls = jobService.updateJobStatus.mock.calls;
-      expect(calls[0]).toEqual([mockJob.jobId, JobStatus.PROCESSING]);
-      expect(calls[1][0]).toBe(mockJob.jobId);
-      expect(calls[1][1]).toBe(JobStatus.COMPLETED);
+      expect(calls[0]).toEqual([mockJob.id, mockJob.userId, JobStatus.PROCESSING]);
+      expect(calls[1][0]).toBe(mockJob.id);
+      expect(calls[1][1]).toBe(mockJob.userId);
+      expect(calls[1][2]).toBe(JobStatus.COMPLETED);
     });
 
     it('uploads resized image to correct S3 key', async () => {
@@ -89,7 +91,7 @@ describe('ImageResizeProcessor', () => {
 
       expect(storageService.uploadBatch).toHaveBeenCalledWith([
         expect.objectContaining({
-          key: `resized/${mockJob.jobId}/${ResizePreset.THUMBNAIL}.jpg`,
+          key: `resized/${mockJob.id}/${ResizePreset.THUMBNAIL}.jpg`,
           contentType: 'image/jpeg',
         }),
       ]);
@@ -99,11 +101,11 @@ describe('ImageResizeProcessor', () => {
       await processor.processJob(mockJob);
 
       expect(notificationService.notifyJobComplete).toHaveBeenCalledWith(
-        mockJob.jobId,
+        mockJob.id,
         expect.arrayContaining([
           expect.objectContaining({
             resizePreset: ResizePreset.THUMBNAIL,
-            resizeKey: `resized/${mockJob.jobId}/${ResizePreset.THUMBNAIL}.jpg`,
+            resizeKey: `resized/${mockJob.id}/${ResizePreset.THUMBNAIL}.jpg`,
           }),
         ]),
       );
@@ -114,9 +116,9 @@ describe('ImageResizeProcessor', () => {
 
       await processor.processJob(mockJob);
 
-      expect(jobService.updateJobStatus).toHaveBeenCalledWith(mockJob.jobId, JobStatus.FAILED);
+      expect(jobService.updateJobStatus).toHaveBeenCalledWith(mockJob.id, mockJob.userId, JobStatus.FAILED);
       expect(notificationService.notifyJobFailed).toHaveBeenCalledWith(
-        mockJob.jobId,
+        mockJob.id,
         expect.any(Error),
       );
       expect(notificationService.notifyJobComplete).not.toHaveBeenCalled();
@@ -125,14 +127,15 @@ describe('ImageResizeProcessor', () => {
     it('handles single preset passed as non-array', async () => {
       const singlePresetJob = {
         ...mockJob,
-        resizePreset: ResizePreset.MEDIUM as unknown as ResizePreset[],
+        presets: ResizePreset.MEDIUM as unknown as ResizePreset[],
       };
 
       await processor.processJob(singlePresetJob);
 
       expect(storageService.uploadBatch).toHaveBeenCalled();
       expect(jobService.updateJobStatus).toHaveBeenCalledWith(
-        mockJob.jobId,
+        mockJob.id,
+        mockJob.userId,
         JobStatus.COMPLETED,
         expect.anything(),
       );
@@ -141,7 +144,7 @@ describe('ImageResizeProcessor', () => {
     it('processes multiple presets in one job', async () => {
       const multiPresetJob = {
         ...mockJob,
-        resizePreset: [ResizePreset.THUMBNAIL, ResizePreset.MEDIUM, ResizePreset.LARGE],
+        presets: [ResizePreset.THUMBNAIL, ResizePreset.MEDIUM, ResizePreset.LARGE],
       };
 
       await processor.processJob(multiPresetJob);
