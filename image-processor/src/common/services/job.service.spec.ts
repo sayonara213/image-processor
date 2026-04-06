@@ -20,7 +20,7 @@ describe('JobService', () => {
         },
         {
           provide: RedisCacheService,
-          useValue: { set: jest.fn() },
+          useValue: { del: jest.fn() },
         },
       ],
     }).compile();
@@ -32,17 +32,17 @@ describe('JobService', () => {
 
   describe('updateJobStatus', () => {
     it('updates database record with new status', async () => {
-      await service.updateJobStatus('job-1', JobStatus.COMPLETED);
+      await service.updateJobStatus('job-1', 'user-1', JobStatus.COMPLETED);
 
       expect(repository.update).toHaveBeenCalledWith('job-1', {
         status: JobStatus.COMPLETED,
       });
     });
 
-    it('updates cache with new status', async () => {
-      await service.updateJobStatus('job-1', JobStatus.PROCESSING);
+    it('invalidates user jobs cache', async () => {
+      await service.updateJobStatus('job-1', 'user-1', JobStatus.PROCESSING);
 
-      expect(cacheService.set).toHaveBeenCalledWith('job-1', JobStatus.PROCESSING);
+      expect(cacheService.del).toHaveBeenCalledWith('jobs:user:user-1');
     });
 
     it('merges extra fields into the database update', async () => {
@@ -55,7 +55,9 @@ describe('JobService', () => {
         },
       ];
 
-      await service.updateJobStatus('job-1', JobStatus.COMPLETED, { results } as any);
+      await service.updateJobStatus('job-1', 'user-1', JobStatus.COMPLETED, {
+        results,
+      } as any);
 
       expect(repository.update).toHaveBeenCalledWith('job-1', {
         status: JobStatus.COMPLETED,

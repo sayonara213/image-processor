@@ -7,10 +7,17 @@ import { QueueService } from './services/queue.service';
 import { JobService } from './services/job.service';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ImageJobEntity } from './entities/job.entity';
+import { AuthModule } from 'src/api/user/auth/auth.module';
+import { UsersModule } from 'src/api/user/users/users.module';
 
 @Global()
 @Module({
-  imports: [ConfigModule, TypeOrmModule.forFeature([ImageJobEntity])],
+  imports: [
+    ConfigModule,
+    TypeOrmModule.forFeature([ImageJobEntity]),
+    AuthModule,
+    UsersModule,
+  ],
   providers: [
     RedisCacheService,
     NotificationService,

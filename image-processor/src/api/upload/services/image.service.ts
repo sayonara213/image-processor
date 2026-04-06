@@ -18,13 +18,18 @@ export class ImageService {
     private readonly queueService: QueueService,
   ) {}
 
-  async uploadAndQueue(file: Express.Multer.File, presets: ResizePreset[]) {
+  async uploadAndQueue(
+    file: Express.Multer.File,
+    presets: ResizePreset[],
+    userId: string,
+  ) {
     const jobUUID = randomUUID();
     const s3Key = `originals/${jobUUID}/${file.originalname}`;
     await this.storageService.upload(s3Key, file.buffer, file.mimetype);
 
     const job = this.repository.create({
       id: jobUUID,
+      userId,
       originalFilename: file.originalname,
       originalKey: s3Key,
       status: JobStatus.QUEUED,
@@ -33,12 +38,11 @@ export class ImageService {
     await this.repository.save(job);
 
     await this.queueService.sendMessage({
-      jobId: jobUUID,
-      originalKey: s3Key,
-      resizePreset: presets,
+      ...job,
+      presets: presets,
     });
 
-    await this.redisService.set(jobUUID, JobStatus.QUEUED);
+    await this.redisService.del(`jobs:user:${userId}`);
 
     return { jobUUID, jobStatus: JobStatus.QUEUED };
   }
@@ -52,5 +56,18 @@ export class ImageService {
     }
 
     return cachedRes;
+  }
+
+  async getUserJobs(userId: string): Promise<ImageJobEntity[]> {
+    const cacheKey = `jobs:user:${userId}`;
+    const cachedRes = await this.redisService.get<ImageJobEntity[]>(cacheKey);
+
+    if (cachedRes) return cachedRes;
+
+    const jobs = await this.repository.findBy({ userId });
+
+    await this.redisService.set(cacheKey, jobs, 60);
+
+    return jobs;
   }
 }

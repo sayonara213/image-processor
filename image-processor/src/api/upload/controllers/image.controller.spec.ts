@@ -3,10 +3,13 @@ import { BadRequestException } from '@nestjs/common';
 import { ImageController } from './image.controller';
 import { ImageService } from '../services/image.service';
 import { JobStatus, ResizePreset } from 'src/common/interfaces/job.interface';
+import { ImageJobEntity } from 'src/common/entities/job.entity';
 
 describe('ImageController', () => {
   let controller: ImageController;
   let imageService: jest.Mocked<ImageService>;
+
+  const userId = 'user-123';
 
   const mockFile = {
     originalname: 'photo.jpg',
@@ -23,7 +26,7 @@ describe('ImageController', () => {
           provide: ImageService,
           useValue: {
             uploadAndQueue: jest.fn(),
-            getJobStatus: jest.fn(),
+            getUserJobs: jest.fn(),
           },
         },
       ],
@@ -40,15 +43,23 @@ describe('ImageController', () => {
         jobStatus: JobStatus.QUEUED,
       });
 
-      const result = await controller.uploadImage(mockFile, { presets: [ResizePreset.MEDIUM] });
+      const result = await controller.uploadImage(
+        mockFile,
+        { presets: [ResizePreset.MEDIUM] },
+        userId,
+      );
 
       expect(result).toEqual({ jobUUID: 'uuid-123', jobStatus: JobStatus.QUEUED });
-      expect(imageService.uploadAndQueue).toHaveBeenCalledWith(mockFile, [ResizePreset.MEDIUM]);
+      expect(imageService.uploadAndQueue).toHaveBeenCalledWith(
+        mockFile,
+        [ResizePreset.MEDIUM],
+        userId,
+      );
     });
 
     it('throws BadRequestException when no file is provided', async () => {
       await expect(
-        controller.uploadImage(undefined as any, { presets: [ResizePreset.THUMBNAIL] }),
+        controller.uploadImage(undefined as any, { presets: [ResizePreset.THUMBNAIL] }, userId),
       ).rejects.toThrow(BadRequestException);
     });
 
@@ -56,25 +67,38 @@ describe('ImageController', () => {
       const emptyFile = { ...mockFile, buffer: Buffer.alloc(0), size: 0 };
 
       await expect(
-        controller.uploadImage(emptyFile as any, { presets: [ResizePreset.THUMBNAIL] }),
+        controller.uploadImage(emptyFile as any, { presets: [ResizePreset.THUMBNAIL] }, userId),
       ).rejects.toThrow(BadRequestException);
     });
 
     it('throws BadRequestException when presets are missing', async () => {
       await expect(
-        controller.uploadImage(mockFile, {} as any),
+        controller.uploadImage(mockFile, {} as any, userId),
       ).rejects.toThrow(BadRequestException);
     });
   });
 
-  describe('getJobStatus', () => {
-    it('returns the job status from the service', async () => {
-      imageService.getJobStatus.mockResolvedValue(JobStatus.COMPLETED);
+  describe('getUsersJobs', () => {
+    it('returns the list of jobs for the current user', async () => {
+      const mockJobs = [
+        { id: 'job-1', status: JobStatus.COMPLETED },
+        { id: 'job-2', status: JobStatus.PROCESSING },
+      ] as ImageJobEntity[];
 
-      const result = await controller.getJobStatus('uuid-123');
+      imageService.getUserJobs.mockResolvedValue(mockJobs);
 
-      expect(result).toBe(JobStatus.COMPLETED);
-      expect(imageService.getJobStatus).toHaveBeenCalledWith('uuid-123');
+      const result = await controller.getUsersJobs(userId);
+
+      expect(result).toBe(mockJobs);
+      expect(imageService.getUserJobs).toHaveBeenCalledWith(userId);
+    });
+
+    it('returns empty array when user has no jobs', async () => {
+      imageService.getUserJobs.mockResolvedValue([]);
+
+      const result = await controller.getUsersJobs(userId);
+
+      expect(result).toEqual([]);
     });
   });
 });

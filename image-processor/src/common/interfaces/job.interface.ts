@@ -1,3 +1,5 @@
+import { ImageJobEntity } from '../entities/job.entity';
+
 export enum JobStatus {
   QUEUED = 'queued',
   PROCESSING = 'processing',
@@ -22,10 +24,8 @@ export const ResizeMap: Record<ResizePreset, Dimensions> = {
   [ResizePreset.LARGE]: { width: 1920, height: 1080 },
 };
 
-export interface ImageJobPayload {
-  jobId: string;
-  originalKey: string;
-  resizePreset: ResizePreset[];
+export interface ImageJobPayload extends ImageJobEntity {
+  presets: ResizePreset[];
 }
 
 export interface ImageJobResult {

@@ -6,6 +6,7 @@ import { ImageJobEntity } from 'src/common/entities/job.entity';
 import { ImageResizeProcessor } from './processors/image-resize.processor';
 import { LoggerModule } from 'nestjs-pino';
 import { AppLogger } from 'src/common/services/logger.service';
+import { UsersEntity } from 'src/api/user/users/users.entity';
 
 @Module({
   imports: [
@@ -42,11 +43,11 @@ import { AppLogger } from 'src/common/services/logger.service';
         username: config.getOrThrow('DB_USERNAME'),
         password: config.getOrThrow('DB_PASSWORD'),
         database: config.getOrThrow('DB_DATABASE'),
-        entities: [ImageJobEntity],
+        entities: [ImageJobEntity, UsersEntity],
         synchronize: true,
       }),
     }),
-    TypeOrmModule.forFeature([ImageJobEntity]),
+    TypeOrmModule.forFeature([ImageJobEntity, UsersEntity]),
   ],
   providers: [ImageResizeProcessor, AppLogger],
 })

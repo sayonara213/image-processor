@@ -14,6 +14,15 @@ describe('ImageService', () => {
   let redisService: jest.Mocked<RedisCacheService>;
   let queueService: jest.Mocked<QueueService>;
 
+  const userId = 'user-123';
+
+  const mockFile = {
+    originalname: 'test.jpg',
+    buffer: Buffer.from('test'),
+    mimetype: 'image/jpeg',
+    size: 4,
+  } as Express.Multer.File;
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -24,6 +33,7 @@ describe('ImageService', () => {
             create: jest.fn(),
             save: jest.fn(),
             findOneBy: jest.fn(),
+            findBy: jest.fn(),
           },
         },
         {
@@ -32,7 +42,7 @@ describe('ImageService', () => {
         },
         {
           provide: RedisCacheService,
-          useValue: { get: jest.fn(), set: jest.fn() },
+          useValue: { get: jest.fn(), set: jest.fn(), del: jest.fn() },
         },
         {
           provide: QueueService,
@@ -49,23 +59,16 @@ describe('ImageService', () => {
   });
 
   describe('uploadAndQueue', () => {
-    const mockFile = {
-      originalname: 'test.jpg',
-      buffer: Buffer.from('test'),
-      mimetype: 'image/jpeg',
-      size: 4,
-    } as Express.Multer.File;
-
     beforeEach(() => {
-      repository.create.mockReturnValue({ id: 'uuid', status: JobStatus.QUEUED });
+      repository.create.mockReturnValue({ id: 'uuid', userId, status: JobStatus.QUEUED });
       repository.save.mockResolvedValue(undefined);
       storageService.upload.mockResolvedValue(undefined);
       queueService.sendMessage.mockResolvedValue(undefined);
-      redisService.set.mockResolvedValue(undefined);
+      redisService.del.mockResolvedValue(undefined);
     });
 
     it('uploads file to S3 with correct key pattern', async () => {
-      await service.uploadAndQueue(mockFile, [ResizePreset.THUMBNAIL]);
+      await service.uploadAndQueue(mockFile, [ResizePreset.THUMBNAIL], userId);
 
       expect(storageService.upload).toHaveBeenCalledWith(
         expect.stringMatching(/^originals\/.+\/test\.jpg$/),
@@ -74,11 +77,12 @@ describe('ImageService', () => {
       );
     });
 
-    it('saves job to database with QUEUED status', async () => {
-      await service.uploadAndQueue(mockFile, [ResizePreset.THUMBNAIL]);
+    it('saves job to database with userId and QUEUED status', async () => {
+      await service.uploadAndQueue(mockFile, [ResizePreset.THUMBNAIL], userId);
 
       expect(repository.create).toHaveBeenCalledWith(
         expect.objectContaining({
+          userId,
           originalFilename: 'test.jpg',
           status: JobStatus.QUEUED,
         }),
@@ -86,25 +90,22 @@ describe('ImageService', () => {
       expect(repository.save).toHaveBeenCalled();
     });
 
-    it('sends message to queue with correct payload', async () => {
-      const result = await service.uploadAndQueue(mockFile, [ResizePreset.MEDIUM]);
+    it('sends message to queue with file presets', async () => {
+      await service.uploadAndQueue(mockFile, [ResizePreset.MEDIUM], userId);
 
       expect(queueService.sendMessage).toHaveBeenCalledWith(
-        expect.objectContaining({
-          jobId: result.jobUUID,
-          resizePreset: [ResizePreset.MEDIUM],
-        }),
+        expect.objectContaining({ presets: [ResizePreset.MEDIUM] }),
       );
     });
 
-    it('caches job status in Redis', async () => {
-      const result = await service.uploadAndQueue(mockFile, [ResizePreset.THUMBNAIL]);
+    it('invalidates user jobs cache after queuing', async () => {
+      await service.uploadAndQueue(mockFile, [ResizePreset.THUMBNAIL], userId);
 
-      expect(redisService.set).toHaveBeenCalledWith(result.jobUUID, JobStatus.QUEUED);
+      expect(redisService.del).toHaveBeenCalledWith(`jobs:user:${userId}`);
     });
 
     it('returns jobUUID and QUEUED status', async () => {
-      const result = await service.uploadAndQueue(mockFile, [ResizePreset.THUMBNAIL]);
+      const result = await service.uploadAndQueue(mockFile, [ResizePreset.THUMBNAIL], userId);
 
       expect(result.jobStatus).toBe(JobStatus.QUEUED);
       expect(typeof result.jobUUID).toBe('string');
@@ -112,33 +113,43 @@ describe('ImageService', () => {
     });
   });
 
-  describe('getJobStatus', () => {
-    it('returns cached status without hitting the database', async () => {
-      redisService.get.mockResolvedValue(JobStatus.PROCESSING);
+  describe('getUserJobs', () => {
+    const mockJobs = [
+      { id: 'job-1', status: JobStatus.COMPLETED },
+      { id: 'job-2', status: JobStatus.PROCESSING },
+    ] as ImageJobEntity[];
 
-      const result = await service.getJobStatus('some-uuid');
+    it('returns cached jobs without hitting the database', async () => {
+      redisService.get.mockResolvedValue(mockJobs);
 
-      expect(result).toBe(JobStatus.PROCESSING);
-      expect(repository.findOneBy).not.toHaveBeenCalled();
+      const result = await service.getUserJobs(userId);
+
+      expect(result).toBe(mockJobs);
+      expect(repository.findBy).not.toHaveBeenCalled();
     });
 
-    it('falls back to database on cache miss', async () => {
+    it('falls back to database on cache miss and caches the result', async () => {
       redisService.get.mockResolvedValue(null);
-      repository.findOneBy.mockResolvedValue({ status: JobStatus.COMPLETED });
+      repository.findBy.mockResolvedValue(mockJobs);
 
-      const result = await service.getJobStatus('some-uuid');
+      const result = await service.getUserJobs(userId);
 
-      expect(result).toBe(JobStatus.COMPLETED);
-      expect(repository.findOneBy).toHaveBeenCalledWith({ id: 'some-uuid' });
+      expect(result).toBe(mockJobs);
+      expect(repository.findBy).toHaveBeenCalledWith({ userId });
+      expect(redisService.set).toHaveBeenCalledWith(
+        `jobs:user:${userId}`,
+        mockJobs,
+        60,
+      );
     });
 
-    it('returns undefined when job not found in cache or db', async () => {
+    it('returns empty array when user has no jobs', async () => {
       redisService.get.mockResolvedValue(null);
-      repository.findOneBy.mockResolvedValue(null);
+      repository.findBy.mockResolvedValue([]);
 
-      const result = await service.getJobStatus('missing-uuid');
+      const result = await service.getUserJobs(userId);
 
-      expect(result).toBeUndefined();
+      expect(result).toEqual([]);
     });
   });
 });

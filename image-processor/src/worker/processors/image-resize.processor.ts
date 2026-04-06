@@ -40,16 +40,14 @@ export class ImageResizeProcessor implements OnModuleInit {
   }
   async processJob(job: ImageJobPayload) {
     this.logger.log('Processing job', {
-      jobId: job.jobId,
-      presets: job.resizePreset,
+      jobId: job.id,
+      presets: job.presets,
     });
 
-    await this.jobService.updateJobStatus(job.jobId, JobStatus.PROCESSING);
+    await this.jobService.updateJobStatus(job.id, job.userId, JobStatus.PROCESSING);
     try {
       const originalImage = await this.storageService.download(job.originalKey);
-      const presets = Array.isArray(job.resizePreset)
-        ? job.resizePreset
-        : [job.resizePreset];
+      const presets = Array.isArray(job.presets) ? job.presets : [job.presets];
       const processedImages = await Promise.all(
         presets.map(async (preset) => {
           const { data, info } = await sharp(originalImage)
@@ -60,7 +58,7 @@ export class ImageResizeProcessor implements OnModuleInit {
             .jpeg({ quality: 85 })
             .toBuffer({ resolveWithObject: true });
 
-          const key = `resized/${job.jobId}/${preset}.jpg`;
+          const key = `resized/${job.id}/${preset}.jpg`;
 
           return {
             upload: { key, body: data, contentType: 'image/jpeg' },
@@ -79,15 +77,12 @@ export class ImageResizeProcessor implements OnModuleInit {
       );
 
       const results = processedImages.map((p) => p.result);
-      await this.jobService.updateJobStatus(job.jobId, JobStatus.COMPLETED, {
-        results,
-      });
-      await this.notificationService.notifyJobComplete(job.jobId, results);
-      this.logger.log('Job success', { jobId: job.jobId });
+      await this.jobService.updateJobStatus(job.id, job.userId, JobStatus.COMPLETED, { results });
+      await this.notificationService.notifyJobComplete(job.id, results);
     } catch (error) {
-      await this.jobService.updateJobStatus(job.jobId, JobStatus.FAILED);
-      await this.notificationService.notifyJobFailed(job.jobId, error);
-      this.logger.error('Job failed', error as Error, { jobId: job.jobId });
+      await this.jobService.updateJobStatus(job.id, job.userId, JobStatus.FAILED);
+      await this.notificationService.notifyJobFailed(job.id, error);
+      this.logger.error('Job failed', error as Error, { jobId: job.id });
     }
   }
 

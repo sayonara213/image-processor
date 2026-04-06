@@ -3,17 +3,19 @@ import {
   Body,
   Controller,
   Get,
-  Param,
-  ParseUUIDPipe,
   Post,
   UploadedFile,
+  UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { ImageService } from '../services/image.service';
 import { UploadImageDto } from '../dto/upload-image.dto';
+import { AuthGuard } from 'src/api/user/auth/auth.guard';
+import { CurrentUser } from 'src/api/user/users/users.decorators';
 
+@UseGuards(AuthGuard)
 @Controller('image')
 export class ImageController {
   constructor(private readonly imagesService: ImageService) {}
@@ -40,7 +42,9 @@ export class ImageController {
   async uploadImage(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadImageDto,
+    @CurrentUser('sub') userId: string,
   ) {
+    console.log(userId);
     if (!file) {
       throw new BadRequestException('Image file is required');
     }
@@ -53,15 +57,20 @@ export class ImageController {
       throw new BadRequestException('Presets are required');
     }
 
-    const job = await this.imagesService.uploadAndQueue(file, dto.presets);
+    const job = await this.imagesService.uploadAndQueue(
+      file,
+      dto.presets,
+      userId,
+    );
 
     return {
       ...job,
     };
   }
 
-  @Get(':jobId')
-  async getJobStatus(@Param('jobId', ParseUUIDPipe) jobId: string) {
-    return this.imagesService.getJobStatus(jobId);
+  @UseGuards(AuthGuard)
+  @Get('user')
+  async getUsersJobs(@CurrentUser('sub') userId: string) {
+    return await this.imagesService.getUserJobs(userId);
   }
 }
