@@ -45,8 +45,8 @@ export class ImageResizeProcessor implements OnModuleInit {
     });
 
     await this.jobService.updateJobStatus(job.jobId, JobStatus.PROCESSING);
-    const originalImage = await this.storageService.download(job.originalKey);
     try {
+      const originalImage = await this.storageService.download(job.originalKey);
       const presets = Array.isArray(job.resizePreset)
         ? job.resizePreset
         : [job.resizePreset];
